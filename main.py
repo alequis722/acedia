@@ -1,3 +1,4 @@
+from sys import argv
 allowed=("name","const","expr","add","sub","mul","div",)
 keyword=("fn","begin","end","return",)
 def err(a):
@@ -194,7 +195,9 @@ def lex(code):
  return tuple(res)
 
 def main():
- with open("main.acedia","r") as fin:
+ if len(argv)==1: err("Expected a file")
+ elif not argv[1].endswith(".acedia"): err("File must end with '.acedia'")
+ with open(argv[1],"r") as fin:
   tokens=lex(fin.read())
   ast=parse(tokens)
   print(ast)
