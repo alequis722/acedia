@@ -1,6 +1,8 @@
 from sys import argv
+
 allowed=("name","const","expr","add","sub","mul","div",)
-keyword=("fn","begin","end","return",)
+keyword=("fn","return",)
+
 def err(a):
  print(a)
  exit(-1)
@@ -8,10 +10,48 @@ def err(a):
 
 def parse(tokens):
  res=tokens
+ res=parseParen(res)
  res=parseMD(res)
  res=parseAS(res)
  res=parseKeyword(res)
  res=parseCall(res)
+ return res
+
+def parseParen(tokens):
+ res=[]
+ i=0
+
+ while i<len(tokens):
+  if tokens[i][0]=='(':
+   if tokens[i-1][0]!="name":
+    i+=1
+    c=1
+    a=[]
+    while i<len(tokens):
+     if tokens[i][0]=='(': c+=1
+     elif tokens[i][0]==')': c-=1
+     if c==0: break
+     a.append(tokens[i])
+     i+=1
+    if c!=0: err("Unfinished expression")
+    res.append(("expr",parse(a)))
+   else: res.append(tokens[i])
+  elif tokens[i][0]=='{':
+   i+=1
+   c=1
+   a=[]
+   while i<len(tokens):
+    if tokens[i][0]=='{': c+=1
+    elif tokens[i][0]=='}': c-=1
+    if c==0: break
+    a.append(tokens[i])
+    i+=1
+   if c!=0: err("Unfinished block")
+   res.append(("block",parse(a)))
+  elif tokens[i][0]=='}': err("Unexpected '}'")
+  else: res.append(tokens[i])
+  i+=1
+
  return res
 
 def parseAS(tokens):
@@ -113,30 +153,8 @@ def parseKeyword(tokens):
     i+=1
    if c!=0: err("Unclosed '('")
    i+=1
-   if i>=len(tokens) or tokens[i][0]!="begin": err("Expected 'begin'")
-   c+=1
-   i+=1
-   b=[]
-   while i<len(tokens):
-    if tokens[i][0]=="begin": c+=1
-    elif tokens[i][0]=="end": c-=1
-    if c==0: break
-    b.append(tokens[i])
-    i+=1
-   if c!=0: err("Unfinished block")
-   res.append(("def",name,tuple(a),parse(b)))
-  elif tokens[i][0]=="begin":
-   i+=1
-   c=1
-   a=[]
-   while i<len(tokens):
-    if tokens[i][0]=="begin": c+=1
-    elif tokens[i][0]=="end": c-=1
-    if c==0: break
-    a.append(tokens[i])
-    i+=1
-   res.append(("block",parse(a)))
-  elif tokens[i][0]=="end": err("Unexpected 'end'")
+   if i>=len(tokens) or tokens[i][0]!="block": err("Expected block")
+   res.append(("def",name,tuple(a),tokens[i][1]))
   elif tokens[i][0]=="return":
    i+=1
    if i>=len(tokens): err("Return value expected")
@@ -178,7 +196,7 @@ def lex(code):
    if c!=0: err("Unclosed string")
    res.append(("const",word))
    word=""
-  elif code[i] in "();+*/=,": res.append((code[i],))
+  elif code[i] in "(){};+*/=,": res.append((code[i],))
   elif code[i]=='-':
    if i+1>=len(code): err("Interupted parsing")
    if (not (code[i-1].isalnum() or code[i-1]=='_')) and code[i+1].isdigit():
