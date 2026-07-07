@@ -1,11 +1,42 @@
 from sys import argv
 
-class Opcode:
- call='\x00'
- push='\x10'
- pushs='\x11'
+class Num:
+ def __init__(self,nat,fix=0):
+  self.val=(int(nat)&0xff)*0x100
+  if fix!=0 and fix!='':
+   self.val+=int(fix)&0xff
 
-allowed=("name","const","expr","add","sub","mul","div",)
+ def __str__(self):
+  res=""
+  if self.val&0x8000:
+   res+='-'
+  res+=str((self.val>>8)&0x7f)
+  a=self.val&0xff
+  if a:
+   res+='.'
+   res+=str(a)
+
+  return res
+
+ def __repr__(self):
+  return self.__str__()
+
+ def __add__(self,rhs):
+  if isinstance(rhs,Num): return self.val+rhs.val
+  elif isinstance(rhs,int): return self.__add__(Num(rhs))
+
+ def __sub__(self,rhs):
+  if isinstance(rhs,Num): return self.val-rhs.val
+  elif isinstance(rhs,int): return self.__sub__(Num(rhs))
+
+class opcode:
+ pushn='\x00'
+ pushs='\x01'
+ call='\x10'
+ add='\x20'
+ sub='\x21'
+
+allowed=("name","const","expr","add","sub",)
 keyword=("fn","return","let")
 
 def err(a):
@@ -13,35 +44,43 @@ def err(a):
  exit(-1)
  return
 
-header="ACE\x27"
 data=""
-code=""
-def codegen(ast,l=False):
- global code,data
+def codegen(ast,codeonly=False):
+ global data
  i=0
+ header="NIL\x27"
+ code=""
 
  while i<len(ast):
-  if ast[i][0]=="call":
+  if ast[i][0]=="const":
+   if isinstance(ast[i][1],str):
+    data+=chr(len(ast[i][1]))+ast[i][1]
+    code+=opcode.pushs+chr(data.find(ast[i][1])-1)
+   elif isinstance(ast[i][1],Num):
+    code+=opcode.pushn+chr(ast[i][1].val>>8)+chr(ast[i][1].val&0xff)
+  elif ast[i][0]=="call":
    code+=codegen(ast[i][2][::-1],True)
    data+=chr(len(ast[i][1]))+ast[i][1]
-   code+=Opcode.pushs+chr(data.find(ast[i][1]))+Opcode.call
+   code+=opcode.call
    i+=1
-  elif ast[i][0]=="const":
-   if isinstance(ast[i][1],int): code+=Opcode.push+chr(ast[i][1])
-   else:
-    data+=chr(len(ast[i][1]))+ast[i][1]
-    code+=Opcode.pushs+chr(data.find(ast[i][1])-1)
+   if i>=len(ast) or ast[i][0]!=';': err("Expected ';'")
+  elif ast[i][0]=="add":
+   code+=codegen((ast[i][2],),True)
+   code+=codegen((ast[i][1],),True)
+   code+=opcode.add
+  elif ast[i][0]=="sub":
+   code+=codegen((ast[i][2],),True)
+   code+=codegen((ast[i][1],),True)
+   code+=opcode.sub
   i+=1
 
- entry=6+len(data)
-
- if l: return code
- else: return header+chr(entry)+data+code
+ if codeonly: return code
+ start=5+len(data)
+ return header+chr(start)+data+code
 
 def parse(tokens):
  res=tokens
  res=parseParen(res)
- res=parseMD(res)
  res=parseAS(res)
  res=parseKeyword(res)
  res=parseCall(res)
@@ -102,25 +141,6 @@ def parseAS(tokens):
   i+=1
 
  return res
-
-def parseMD(tokens):
- res=[]
- i=0
-
- while i<len(tokens):
-  if tokens[i][0] in "*/":
-   op=tokens[i][0]
-   a=res.pop()
-   if not a[0] in allowed: err("Expected a name, a constant, or an expression")
-   i+=1
-   if i>=len(tokens): err("Unfinished operaton")
-   b=tokens[i]
-   if not b[0] in allowed: err("Expected a name, a constant, or an expression")
-   res.append(("mul" if op=='*' else "div",a,b))
-  else: res.append(tokens[i])
-  i+=1
-
- return tuple(res)
 
 def parseCall(tokens):
  res=[]
@@ -217,10 +237,29 @@ def lex(code):
    else: res.append(("name",word))
    word=""
   elif code[i].isdigit():
+   c=0
+   fix=""
+   while i<len(code) and code[i].isdigit():
+    if c!=1:
+     word+=code[i]
+    else:
+     fix+=code[i]
+    i+=1
+    if code[i]=='.':
+     i+=1
+     c+=1
+    if c>1: err("Unexpected '.' in number")
+   res.append(("const",Num(word,fix)))
+   word=""
+
+  if code[i]=='.':
+   i+=1
+   if i>=len(code) and not code[i].isdigit(): err("Expected digit after '.'")
    while i<len(code) and code[i].isdigit():
     word+=code[i]
     i+=1
-   res.append(("const",int(word)))
+    if code[i]=='.': err("Unexpected '.' in number")
+   res.append(("const",Num(0,int(word))))
    word=""
 
   if code[i] in "'\"":
@@ -235,15 +274,24 @@ def lex(code):
    if c!=0: err("Unclosed string")
    res.append(("const",word))
    word=""
-  elif code[i] in "(){};+*/=,": res.append((code[i],))
+  elif code[i] in "(){};+=,": res.append((code[i],))
   elif code[i]=='-':
    if i+1>=len(code): err("Interupted parsing")
    if (not (code[i-1].isalnum() or code[i-1]=='_')) and code[i+1].isdigit():
     i+=1
+    c=0
+    fix=""
     while i<len(code) and code[i].isdigit():
-     word+=code[i]
+     if c!=1:
+      word+=code[i]
+     else:
+      fix+=code[i]
      i+=1
-    res.append(("const",int('-'+word)))
+     if code[i]=='.':
+      i+=1
+      c+=1
+     if c>1: err("Unexpected '.' in number")
+    res.append(("const",Num((int(word)&0x7f)+0x80,fix&0xff)))
     word=""
    else:
     res.append((code[i],))
@@ -253,19 +301,11 @@ def lex(code):
 
 def main():
  if len(argv)==1: err("Expected a file")
- elif not (argv[1].endswith(".acedia") or argv[1].endswith(".aceout")): err("File must end with '.acedia' or '.aceout'")
- n=argv[1].endswith(".acedia")
  with open(argv[1],"r") as fin:
-  if n:
-   tokens=lex(fin.read())
-   ast=parse(tokens)
-   code=codegen(ast)
-   with open(argv[1].replace(".acedia",".aceout"),"w") as fout:
-    fout.write(code)
-  else:
-   code=fin.read()
-   if code[0:4]!=header: err("Unknown header")
-   print(*list(hex(ord(x)) for x in code))
+  tokens=lex(fin.read())
+  ast=parse(tokens)
+  code=codegen(ast)
+  print(bytes(code,"utf-8"))
  return
 
 if __name__=="__main__":
