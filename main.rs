@@ -1,4 +1,5 @@
 use std::fs::read_to_string;
+use std::env;
 use std::fmt;
 
 #[derive(Debug,Clone,PartialEq)]
@@ -78,7 +79,8 @@ fn run_list(ast:Vec<Ast>)->Ast{
    run_list(ast[i].lval.clone().unwrap());
   } else if ast[i].kind==Type::Atom {
    if ast[i].sval.is_some() {
-    if ast[i].sval.clone().unwrap()=="print" {
+    let cmd=ast[i].sval.clone().unwrap();
+    if cmd=="print" {
      i+=1;
      let mut b:i32=0;
      while i<len {
@@ -87,7 +89,7 @@ fn run_list(ast:Vec<Ast>)->Ast{
       b+=1;
      }
      res=Ast{kind:Type::Atom,sval:None,ival:Some(b),lval:None};
-    } else if ast[i].sval.clone().unwrap()=="println" {
+    } else if cmd=="println" {
      i+=1;
      let mut b:i32=0;
      while i<len {
@@ -97,7 +99,7 @@ fn run_list(ast:Vec<Ast>)->Ast{
      }
      println!();
      res=Ast{kind:Type::Atom,sval:None,ival:Some(b),lval:None};
-    } else if ast[i].sval.clone().unwrap()=="+" {
+    } else if cmd=="+" {
      i+=1;
      let mut a=run(vec![ast[i].clone()]);
      if a.kind!=Type::Atom || a.ival.is_none() {
@@ -114,7 +116,7 @@ fn run_list(ast:Vec<Ast>)->Ast{
       i+=1;
      }
      res=Ast{kind:Type::Atom,sval:None,ival:Some(b),lval:None};
-    } else if ast[i].sval.clone().unwrap()=="-" {
+    } else if cmd=="-" {
      i+=1;
      let mut a=run(vec![ast[i].clone()]);
      if a.kind!=Type::Atom || a.ival.is_none() {
@@ -131,7 +133,7 @@ fn run_list(ast:Vec<Ast>)->Ast{
       i+=1;
      }
      res=Ast{kind:Type::Atom,sval:None,ival:Some(b),lval:None};
-    } else if ast[i].sval.clone().unwrap()=="*" {
+    } else if cmd=="*" {
      i+=1;
      let mut a=run(vec![ast[i].clone()]);
      if a.kind!=Type::Atom || a.ival.is_none() {
@@ -148,7 +150,7 @@ fn run_list(ast:Vec<Ast>)->Ast{
       i+=1;
      }
      res=Ast{kind:Type::Atom,sval:None,ival:Some(b),lval:None};
-    } else if ast[i].sval.clone().unwrap()=="/" {
+    } else if cmd=="/" {
      i+=1;
      let mut a=run(vec![ast[i].clone()]);
      if a.kind!=Type::Atom || a.ival.is_none() {
@@ -165,6 +167,21 @@ fn run_list(ast:Vec<Ast>)->Ast{
       i+=1;
      }
      res=Ast{kind:Type::Atom,sval:None,ival:Some(b),lval:None};
+    } else if cmd=="list" {
+     i+=1;
+     let mut a=Vec::<Ast>::with_capacity(16);
+     while i<len {
+      a.push(ast[i].clone());
+      i+=1;
+     }
+     a.shrink_to_fit();
+     res=Ast{kind:Type::List,sval:None,ival:None,lval:Some(a.clone())};
+    } else if cmd=="first" {
+     i+=1;
+     if i>=len || ast[i].kind!=Type::List {
+      panic!("Expected a list");
+     }
+     res=run(vec![ast[i].lval.clone().unwrap()[0].clone()])
     } else {
      res=ast[i].clone();
     }
@@ -240,6 +257,13 @@ fn to_ast(tokens:Vec<Token>)->Vec<Ast> {
  return res;
 }
 
+fn isin(c:char,s:&str)->bool {
+ for i in s.chars() {
+  if c==i { return true; }
+ }
+ false
+}
+
 fn lex(code:String) -> Vec<Token> {
  let mut i:usize=0;
  let mut word=String::new();
@@ -280,8 +304,8 @@ fn lex(code:String) -> Vec<Token> {
    }
    res.push(Token{kind:Type::Atom,sval:Some(word.clone()),ival:None});
    word.clear();
-  } else if !chars[i].is_ascii_whitespace() {
-   while i<len && !chars[i].is_ascii_whitespace() {
+  } else if !isin(chars[i]," \t\n\r()") {
+   while i<len && !isin(chars[i]," \t\n\r()") {
     word.push(chars[i]);
     i+=1;
    }
@@ -298,7 +322,11 @@ fn lex(code:String) -> Vec<Token> {
 }
 
 fn main() {
- let code=read_to_string("main.acedia").unwrap();
+ let argv:Vec<String>=env::args().collect();
+ if argv.len()==1 {
+  panic!("Expected a file");
+ }
+ let code=read_to_string(argv[1].clone()).unwrap();
  let tokens=lex(code);
  let ast=parse_from_token(tokens);
  run(ast);
