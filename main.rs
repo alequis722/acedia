@@ -5,9 +5,11 @@ use std::fmt;
 #[derive(Debug,Clone,PartialEq)]
 enum Type {
  Atom,
+ QAtom,
  List,
  LP,
  RP,
+ Apo,
 }
 
 #[derive(Debug,Clone)]
@@ -16,13 +18,6 @@ struct Ast {
  sval:Option<String>,
  ival:Option<i32>,
  lval:Option<Vec<Ast>>,
-}
-
-#[derive(Debug)]
-struct Token {
- kind:Type,
- sval:Option<String>,
- ival:Option<i32>,
 }
 
 impl fmt::Display for Ast {
@@ -42,10 +37,20 @@ impl fmt::Display for Ast {
     }
     let _=write!(f,")");
    },
+   Type::QAtom=>{
+    let _=write!(f,"[Redacted]");
+   }
    _=>return Ok(()),
   }
   Ok(())
  }
+}
+
+#[derive(Debug)]
+struct Token {
+ kind:Type,
+ sval:Option<String>,
+ ival:Option<i32>,
 }
 
 fn run(ast:Vec<Ast>)->Ast {
@@ -62,6 +67,8 @@ fn run(ast:Vec<Ast>)->Ast {
    } else {
     panic!("Unknown type");
    }
+  } else if ast[i].kind==Type::QAtom {
+   res=ast[i].clone();
   }
   i+=1;
  }
@@ -84,7 +91,7 @@ fn run_list(ast:Vec<Ast>)->Ast{
      i+=1;
      let mut b:i32=0;
      while i<len {
-      print!("{} ",run(vec![ast[i].clone()]));
+      print!("{}",run(vec![ast[i].clone()]));
       i+=1;
       b+=1;
      }
@@ -93,7 +100,7 @@ fn run_list(ast:Vec<Ast>)->Ast{
      i+=1;
      let mut b:i32=0;
      while i<len {
-      print!("{} ",run(vec![ast[i].clone()]));
+      print!("{}",run(vec![ast[i].clone()]));
       i+=1;
       b+=1;
      }
@@ -185,7 +192,13 @@ fn run_list(ast:Vec<Ast>)->Ast{
     } else {
      res=ast[i].clone();
     }
+   } else if ast[i].ival.is_some() {
+    res=ast[i].clone();
+   } else {
+    panic!("Unknown value");
    }
+  } else if ast[i].kind==Type::QAtom {
+   res=ast[i].clone();
   }
 
   i+=1;
@@ -203,7 +216,28 @@ fn parse_from_token(tokens:Vec<Token>)->Vec<Ast> {
 
 fn parse(ast:Vec<Ast>)->Vec<Ast> {
  let mut res=parse_list(ast);
+ res=parse_apostrophy(res);
 
+ return res;
+}
+
+fn parse_apostrophy(ast:Vec<Ast>)->Vec<Ast> {
+ let mut res=Vec::<Ast>::with_capacity(16);
+ let mut i:usize=0;
+ let len=ast.len();
+
+ while i<len {
+  if ast[i].kind==Type::Apo {
+   i+=1;
+   if i>=len || ast[i].kind==Type::Apo { panic!("Unexpected token"); }
+   res.push(Ast{kind:Type::QAtom,sval:ast[i].sval.clone(),ival:ast[i].ival.clone(),lval:ast[i].lval.clone()});
+  } else {
+   res.push(ast[i].clone());
+  }
+  i+=1;
+ }
+
+ res.shrink_to_fit();
  return res;
 }
 
@@ -270,12 +304,15 @@ fn lex(code:String) -> Vec<Token> {
  let mut res=Vec::<Token>::with_capacity(8);
  let chars=code.chars().collect::<Vec<char>>();
  let len=code.len();
+ let special=" \t\n\r()\"'";
 
  while i<len {
   if chars[i]=='(' {
    res.push(Token{kind:Type::LP,sval:None,ival:None});
   } else if chars[i]==')' {
    res.push(Token{kind:Type::RP,sval:None,ival:None});
+  } else if chars[i]=='\'' {
+   res.push(Token{kind:Type::Apo,sval:None,ival:None});
   } else if chars[i].is_ascii_digit() {
    while i<len && chars[i].is_ascii_digit() {
     word.push(chars[i]);
@@ -304,8 +341,8 @@ fn lex(code:String) -> Vec<Token> {
    }
    res.push(Token{kind:Type::Atom,sval:Some(word.clone()),ival:None});
    word.clear();
-  } else if !isin(chars[i]," \t\n\r()") {
-   while i<len && !isin(chars[i]," \t\n\r()") {
+  } else if !isin(chars[i],special) {
+   while i<len && !isin(chars[i],special) {
     word.push(chars[i]);
     i+=1;
    }
